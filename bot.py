@@ -22,11 +22,6 @@ session = AiohttpSession(proxy=settings.PROXY_URL) if settings.PROXY_URL else Ai
 bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, session=session)
 dp = Dispatcher()
 
-# Кэш последних транскрибаций: message_id сообщения с результатом -> текст
-transcriptions: dict[int, str] = {}
-MAX_TRANSCRIPTIONS = 1000
-
-
 def result_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура с действиями над результатом транскрибации"""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -39,8 +34,8 @@ def result_keyboard() -> InlineKeyboardMarkup:
 
 
 async def send_result(message: Message, text: str, language: str, duration: float) -> None:
-    """Отправляет результат транскрибации и сохраняет текст для кнопок"""
-    sent = await message.answer(
+    """Отправляет результат транскрибации"""
+    await message.answer(
         f"✅ **Транскрибация готова!**\n\n"
         f"📝 **Текст:**\n{text}\n\n"
         f"🌐 **Язык:** {language}\n"
@@ -49,9 +44,21 @@ async def send_result(message: Message, text: str, language: str, duration: floa
         disable_web_page_preview=True,
         reply_markup=result_keyboard(),
     )
-    if len(transcriptions) >= MAX_TRANSCRIPTIONS:
-        transcriptions.pop(next(iter(transcriptions)))
-    transcriptions[sent.message_id] = text
+
+
+def extract_transcription(message: Message) -> str | None:
+    """Достаёт текст транскрибации из сообщения с результатом"""
+    text = message.text or message.caption
+    if not text:
+        return None
+    marker = "📝 Текст:"
+    if marker not in text:
+        return None
+    body = text.split(marker, 1)[1].lstrip("\n")
+    end = body.rfind("\n\n🌐 Язык:")
+    if end != -1:
+        body = body[:end]
+    return body.strip() or None
 
 
 async def transcribe_audio(audio_file_bytes: bytes, filename: str = "voice.ogg") -> dict:
@@ -127,7 +134,7 @@ async def callback_record_voice(callback: CallbackQuery):
 @dp.callback_query(F.data == "copy_text")
 async def callback_copy_text(callback: CallbackQuery):
     """Отправляет текст отдельным сообщением для копирования"""
-    text = transcriptions.get(callback.message.message_id)
+    text = extract_transcription(callback.message)
     if not text:
         await callback.answer("Текст не найден, отправьте аудио заново.", show_alert=True)
         return
@@ -142,7 +149,7 @@ async def callback_copy_text(callback: CallbackQuery):
 @dp.callback_query(F.data == "share_text")
 async def callback_share_text(callback: CallbackQuery):
     """Отправляет текст сообщением, которое можно переслать"""
-    text = transcriptions.get(callback.message.message_id)
+    text = extract_transcription(callback.message)
     if not text:
         await callback.answer("Текст не найден, отправьте аудио заново.", show_alert=True)
         return

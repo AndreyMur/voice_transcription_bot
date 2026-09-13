@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     POLZA_BASE_URL: str = "https://polza.ai/api/v1"
     WHISPER_MODEL: str = "openai/whisper-large-v3-turbo"
     PROXY_URL: str | None = None
+    WEBHOOK_SECRET: str = "change-me"
 
     class Config:
         env_file = ".env"
