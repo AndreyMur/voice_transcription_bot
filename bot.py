@@ -1,4 +1,5 @@
 import asyncio
+import html
 import io
 import logging
 from aiogram import Bot, Dispatcher, F
@@ -20,6 +21,37 @@ logger = logging.getLogger(__name__)
 session = AiohttpSession(proxy=settings.PROXY_URL) if settings.PROXY_URL else AiohttpSession()
 bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, session=session)
 dp = Dispatcher()
+
+# Кэш последних транскрибаций: message_id сообщения с результатом -> текст
+transcriptions: dict[int, str] = {}
+MAX_TRANSCRIPTIONS = 1000
+
+
+def result_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура с действиями над результатом транскрибации"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📋 Скопировать", callback_data="copy_text"),
+            InlineKeyboardButton(text="📤 Переслать", callback_data="share_text"),
+        ],
+        [InlineKeyboardButton(text="🎤 Записать ещё", callback_data="record_voice")],
+    ])
+
+
+async def send_result(message: Message, text: str, language: str, duration: float) -> None:
+    """Отправляет результат транскрибации и сохраняет текст для кнопок"""
+    sent = await message.answer(
+        f"✅ **Транскрибация готова!**\n\n"
+        f"📝 **Текст:**\n{text}\n\n"
+        f"🌐 **Язык:** {language}\n"
+        f"⏱ **Длительность:** {duration:.1f} сек",
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=result_keyboard(),
+    )
+    if len(transcriptions) >= MAX_TRANSCRIPTIONS:
+        transcriptions.pop(next(iter(transcriptions)))
+    transcriptions[sent.message_id] = text
 
 
 async def transcribe_audio(audio_file_bytes: bytes, filename: str = "voice.ogg") -> dict:
@@ -92,6 +124,33 @@ async def callback_record_voice(callback: CallbackQuery):
     await callback.answer()
 
 
+@dp.callback_query(F.data == "copy_text")
+async def callback_copy_text(callback: CallbackQuery):
+    """Отправляет текст отдельным сообщением для копирования"""
+    text = transcriptions.get(callback.message.message_id)
+    if not text:
+        await callback.answer("Текст не найден, отправьте аудио заново.", show_alert=True)
+        return
+
+    await callback.message.answer(
+        f"<code>{html.escape(text)}</code>",
+        parse_mode="HTML",
+    )
+    await callback.answer("Нажмите на текст, чтобы скопировать")
+
+
+@dp.callback_query(F.data == "share_text")
+async def callback_share_text(callback: CallbackQuery):
+    """Отправляет текст сообщением, которое можно переслать"""
+    text = transcriptions.get(callback.message.message_id)
+    if not text:
+        await callback.answer("Текст не найден, отправьте аудио заново.", show_alert=True)
+        return
+
+    await callback.message.answer(f"📤 Перешлите это сообщение:\n\n{text}")
+    await callback.answer("Перешлите сообщение выше")
+
+
 @dp.message(F.voice)
 async def handle_voice(message: Message):
     """Обработчик голосовых сообщений (OGG)"""
@@ -110,17 +169,7 @@ async def handle_voice(message: Message):
         duration = result.get("duration", 0)
         
         await processing_msg.delete()
-        await message.answer(
-            f"✅ **Транскрибация готова!**\n\n"
-            f"📝 **Текст:**\n{transcribed_text}\n\n"
-            f"🌐 **Язык:** {language}\n"
-            f"⏱ **Длительность:** {duration:.1f} сек",
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎤 Записать ещё", callback_data="record_voice")]
-            ])
-        )
+        await send_result(message, transcribed_text, language, duration)
         
     except Exception as e:
         logger.exception("Ошибка при обработке голосового сообщения")
@@ -148,17 +197,7 @@ async def handle_audio(message: Message):
         duration = result.get("duration", 0)
         
         await processing_msg.delete()
-        await message.answer(
-            f"✅ **Транскрибация готова!**\n\n"
-            f"📝 **Текст:**\n{transcribed_text}\n\n"
-            f"🌐 **Язык:** {language}\n"
-            f"⏱ **Длительность:** {duration:.1f} сек",
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎤 Записать ещё", callback_data="record_voice")]
-            ])
-        )
+        await send_result(message, transcribed_text, language, duration)
         
     except Exception as e:
         logger.exception("Ошибка при обработке аудиофайла")
@@ -190,17 +229,7 @@ async def handle_document(message: Message):
         duration = result.get("duration", 0)
         
         await processing_msg.delete()
-        await message.answer(
-            f"✅ **Транскрибация готова!**\n\n"
-            f"📝 **Текст:**\n{transcribed_text}\n\n"
-            f"🌐 **Язык:** {language}\n"
-            f"⏱ **Длительность:** {duration:.1f} сек",
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎤 Записать ещё", callback_data="record_voice")]
-            ])
-        )
+        await send_result(message, transcribed_text, language, duration)
         
     except Exception as e:
         logger.exception("Ошибка при обработке документа")
