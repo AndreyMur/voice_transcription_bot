@@ -173,9 +173,8 @@ async def callback_share_text(callback: CallbackQuery):
         await callback.answer("Текст не найден, отправьте аудио заново.", show_alert=True)
         return
 
-    await callback.message.answer(f"📤 Перешлите это сообщение:\n\n{text}")
-    await callback.answer("Сообщение от MPixel Секретарь")
-
+    await callback.message.answer(f"📤 Сообщение от MPixel-Секретарь:\n\n{text}")
+    await callback.answer("📤 Перешлите это сообщение:")
 
 @dp.message(F.voice)
 async def handle_voice(message: Message):
