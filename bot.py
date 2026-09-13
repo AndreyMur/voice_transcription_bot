@@ -174,7 +174,7 @@ async def callback_share_text(callback: CallbackQuery):
         return
 
     await callback.message.answer(f"📤 Перешлите это сообщение:\n\n{text}")
-    await callback.answer("Перешлите сообщение выше")
+    await callback.answer("Сообщение от MPixel Секретарь")
 
 
 @dp.message(F.voice)
