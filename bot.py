@@ -33,14 +33,34 @@ def result_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-async def send_result(message: Message, text: str, language: str, duration: float) -> None:
+async def send_result(
+    message: Message,
+    text: str,
+    language: str | None = None,
+    duration: float | None = None,
+) -> None:
     """Отправляет результат транскрибации"""
+    parts = [
+        "✅ <b>Транскрибация готова!</b>",
+        "",
+        "📝 <b>Текст:</b>",
+        html.escape(text),
+    ]
+
+    meta = []
+    if language and language != "unknown":
+        meta.append(f"🌐 <b>Язык:</b> {html.escape(str(language))}")
+    if duration:
+        try:
+            meta.append(f"⏱ <b>Длительность:</b> {float(duration):.1f} сек")
+        except (TypeError, ValueError):
+            pass
+    if meta:
+        parts += ["", "\n".join(meta)]
+
     await message.answer(
-        f"✅ **Транскрибация готова!**\n\n"
-        f"📝 **Текст:**\n{text}\n\n"
-        f"🌐 **Язык:** {language}\n"
-        f"⏱ **Длительность:** {duration:.1f} сек",
-        parse_mode="Markdown",
+        "\n".join(parts),
+        parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=result_keyboard(),
     )
@@ -89,7 +109,6 @@ async def transcribe_audio(audio_file_bytes: bytes, filename: str = "voice.ogg")
     data = {
         "model": settings.WHISPER_MODEL,
         "response_format": "json",
-        "language": "auto",
     }
     
     async with httpx.AsyncClient(timeout=120.0) as client:
@@ -172,8 +191,8 @@ async def handle_voice(message: Message):
         result = await transcribe_audio(file_bytes.read(), "voice.ogg")
         
         transcribed_text = result.get("text", "Текст не распознан.")
-        language = result.get("language", "unknown")
-        duration = result.get("duration", 0)
+        language = result.get("language")
+        duration = result.get("duration")
         
         await processing_msg.delete()
         await send_result(message, transcribed_text, language, duration)
@@ -200,8 +219,8 @@ async def handle_audio(message: Message):
         result = await transcribe_audio(file_bytes.read(), filename)
         
         transcribed_text = result.get("text", "Текст не распознан.")
-        language = result.get("language", "unknown")
-        duration = result.get("duration", 0)
+        language = result.get("language")
+        duration = result.get("duration")
         
         await processing_msg.delete()
         await send_result(message, transcribed_text, language, duration)
@@ -232,8 +251,8 @@ async def handle_document(message: Message):
         result = await transcribe_audio(file_bytes.read(), filename)
         
         transcribed_text = result.get("text", "Текст не распознан.")
-        language = result.get("language", "unknown")
-        duration = result.get("duration", 0)
+        language = result.get("language")
+        duration = result.get("duration")
         
         await processing_msg.delete()
         await send_result(message, transcribed_text, language, duration)
